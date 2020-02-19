@@ -11,6 +11,11 @@ time = 0
 x = 0
 y = 0
 
+foodEaten = 0
+blobsDied = 0
+blobsReproduced = 0
+cycleNumber = 0
+
 pygame.init()
 screen = pygame.display.set_mode((800, 800), DOUBLEBUF)
 clock = pygame.time.Clock()
@@ -22,6 +27,29 @@ def isOccupied(coord, blobMove):
 		if blobMove != blob and blob.rect.colliderect(pygame.Rect(coord[0], coord[1], 20, 20)):
 			return True
 	return False
+
+def getCommonPattern():
+	patternDict = {}
+	for blob in blobs:
+		count = 0
+		pattern = []
+		for direction in blob.moves:
+			if count == 0 or count % 5 == 0:
+				pattern.append(list(direction)[0].capitalize())
+			count += 1
+		if str(pattern) in patternDict:
+			patternDict[str(pattern)] += 1
+		else:
+			patternDict[str(pattern)] = 1
+	return [max(patternDict, key=patternDict.get), patternDict[max(patternDict, key=patternDict.get)]]
+
+def getLongestLiving():
+	longestLiving = blobClass(0, 0, [], [0, 0], [])
+	for blob in blobs:
+		if blob.daysLived >= longestLiving.daysLived:
+			longestLiving = blob
+
+	return longestLiving
 
 def spawnFood(foodNumber):
 	while len(foods) < foodNumber:
@@ -62,7 +90,7 @@ def spawnBlobs(blobNumber):
 				if blob.rect.colliderect(pygame.Rect(x, y, 20, 20)):
 					uniqueHome = False
 			if uniqueHome:
-				blobs.append(blobClass(x, y, blobMoves, [x, y]))
+				blobs.append(blobClass(x, y, blobMoves, [x, y], blobMoves))
 
 		'''
 		if random.randint(1, 2) == 1:
@@ -80,7 +108,29 @@ def spawnBlobs(blobNumber):
 		blobs.append(blobClass(x, y, blobMoves, [x, y]))
 		'''
 
+def detect(blob):
+	x = blob.x - 20
+	y = blob.y - 20
+	for food in foods:
+		rright, rbottom = x + 60/2, y + 60/2
+
+		cleft, ctop	 = food.x-10, food.y-10
+		cright, cbottom = food.x+10, food.y+10
+
+		for x in (x, x+60):
+			for y in (y, y+60):
+
+				if math.hypot(x-food.x, y-food.y) <= 10:
+					return [True, [food.x, food.y]]
+					break
+
+			if x <= food.x <= rright and y <= food.y <= rbottom:
+				[True, [food.x, food.y]]
+				break
+	return [False, []]
+
 def eatFood(blob):
+	global foodEaten
 	for food in foods:
 		rright, rbottom = blob.x + 20/2, blob.y + 20/2
 
@@ -93,21 +143,23 @@ def eatFood(blob):
 				if math.hypot(x-food.x, y-food.y) <= 10:
 					delFoods.append(food)
 					blob.food += 1	
+					foodEaten += 1
 					break
 
 			if blob.x <= food.x <= rright and blob.y <= food.y <= rbottom:
 				delFoods.append(food)
 				blob.food += 1
+				foodEaten += 1
 				break
 
 def getPriority(blob, canGo):
 	x = blob.x
 	y = blob.y
 	priorityDict = {"left": 0, "right": 0, "up": 0, "down": 0}
-	leftBox = pygame.Rect(x + 40, y + 20, 20, 60)
-	rightBox = pygame.Rect(x - 20, y + 20, 20, 60)
-	upBox = pygame.Rect(x - 20, y + 20, 60, 20)
-	downBox = pygame.Rect(x - 20, y - 40, 60, 20)
+	leftBox = pygame.Rect(x + 40, y - 20, 20, 60)
+	rightBox = pygame.Rect(x - 20, y - 20, 20, 60)
+	upBox = pygame.Rect(x - 20, y - 20, 60, 20)
+	downBox = pygame.Rect(x - 20, y + 40, 60, 20)
 	for blob in blobs:
 		if blob.rect.colliderect(leftBox):
 			priorityDict["left"] += 1
@@ -151,21 +203,23 @@ class foodClass(object):
 
 class blobClass(object):
 	blobTag = 1
-	def __init__(self, x, y, moves, home, food = 0):
+	def __init__(self, x, y, moves, home, parents, food = 0):
 		self.x = x
 		self.y = y
 		self.home = home
+		self.parents = parents
 		self.rect = pygame.Rect(self.x, self.y, 20, 20)
 		self.number = blobClass.blobTag
 		self.moves = moves
 		self.moveCount = 0
 		self.homeVar = False
-		self.foodVar = False
+		self.foodVar = [False, []]
 		self.food = food
+		self.daysLived = 0
 		blobClass.blobTag += 1
 
 	def move(self):
-		foodVar = detect()
+		foodVar = detect(blob)
 		if not self.homeVar:
 			direction = moveAI(["right", "down", "up", "left"], self.moves[time], self)
 			if direction == "right": 
@@ -180,7 +234,24 @@ class blobClass(object):
 			if direction == "up": 
 				self.y -= 5
 				eatFood(self)
-		elif foodVar:
+		elif self.foodVar[0]:
+			if abs(self.x - self.foodvar[0]) > 5:
+				if self.x > self.foodVar[0]:
+					self.x -= 5
+					eatFood(self)
+				else:
+					self.x += 5
+					eatFood(self)
+			elif abs(self.y - self.foodvar[1]) > 5:
+				if self.x > self.foodVar[0]:
+					self.y -= 5
+					eatFood(self)
+				else:
+					self.y += 5
+					eatFood(self)
+			else:
+				eatFood(self)
+				self.foodVar = [False, []]
 		else:
 			if self.home[0] > self.x:
 				self.x += 5
@@ -260,7 +331,7 @@ class blobClass(object):
 					newDirection = direction
 				for x in range(5):
 					newMoves.append(newDirection)
-		blobs.append(blobClass(newHome[0], newHome[1], newMoves, newHome, 1))
+		blobs.append(blobClass(newHome[0], newHome[1], newMoves, newHome, self.parents, 1))
 
 	def update(self):
 		self.rect = pygame.Rect(self.x, self.y, 20, 20)
@@ -272,6 +343,7 @@ spawnBlobs(10)
 
 while True:
 	pygame.display.flip()
+	pygame.event.get()
 	screen.fill((0, 0, 0))
 
 	for blob in blobs:
@@ -289,16 +361,34 @@ while True:
 			blob.homeVar = True
 	if time > 750:
 		time = 0
+		cycleNumber += 1
 		foods = []
 		spawnFood(50)
 		for blob in blobs:
 			blob.homeVar = False
 			if blob.food == 0:
 				delBlobs.append(blob)
+				blobsDied += 1
 			elif blob.food > 1:
 				blob.reproduce()
+				blobsReproduced += 1
+			if blob.food > 0:
+				blob.daysLived += 1
 			blob.food = 0
-		print(len(blobs))
+		print(
+			"-----------------------------------------" + 
+			"\nCycle: " + str(cycleNumber) + 
+			"\nTotal Foods Eaten: " + str(foodEaten) + 
+			"\nNumber of Blobs that Died: " + str(blobsDied) + 
+			"\nNumber of Blobs that Reproduced: " + str(blobsReproduced) + 
+			"\nCurrent Population: " + str(len(blobs) - blobsDied) + 
+			"\nMost Common Move Pattern: " + str(getCommonPattern()[0]).strip("[]").replace("'", "").replace(",", "") + " It appears in " + str(getCommonPattern()[1]) + "blob(s)" + 
+			"\nLongest Living Blob: Blob Number " + str(getLongestLiving().blobTag) + " it has lived for " + str(getLongestLiving().daysLived) + " days" + 
+			"\n-----------------------------------------"
+			)
+		foodEaten = 0
+		blobsDied = 0
+		blobsReproduced = 0
 	for blob in delBlobs:
 		blobs.remove(blob)
 	for food in delFoods:
